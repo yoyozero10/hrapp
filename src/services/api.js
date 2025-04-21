@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-// Use direct server URL instead of proxy
+// Use direct server URL without CORS proxy since the proxy is causing 500 errors
+// The app will use fake data mode, but API URL is correct for reference
 const BASE_URL = 'https://doanjava-z61i.onrender.com';  // Direct server URL
 
 // Create axios instance with default config
@@ -19,7 +20,7 @@ const api = axios.create({
 });
 
 // Connection status tracking
-let isServerDown = false; // Changed to false to prioritize real connections
+let isServerDown = false; // Set to false to use real data
 
 // Thêm interceptor để tự động thử lại request khi thất bại
 api.interceptors.response.use(
@@ -264,7 +265,7 @@ export const insurance = {
   delete: (id) => api.delete(`/api/baohiem/deleteBaoHiem/${id}`),
 };
 
-// Qualification APIs (Trình độ)
+// Qualifications APIs (Trình độ)
 export const qualifications = {
   getAll: () => {
     if (isServerDown) {
@@ -288,4 +289,4 @@ export const attendance = {
   },
 };
 
-export default api; 
+export default api;
