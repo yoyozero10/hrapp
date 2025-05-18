@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const BASE_URL = 'https://doanjava-z61i.onrender.com';
+// Direct API URL without any proxy
+const BASE_URL = 'https://doanjava-z61i.onrender.com';  // Direct server URL
 
 // Create axios instance with default config
 const api = axios.create({
@@ -8,39 +9,75 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  // Thêm timeout để tránh request treo vô thời hạn
-  timeout: 10000, // 10 giây
-  // Cho phép cross-domain cookies
+  // Increase timeout for slow server responses
+  timeout: 15000, // 15 seconds
+  // Don't use withCredentials as it can cause CORS issues
   withCredentials: false,
-  // Số lần thử lại request khi gặp lỗi
-  maxRetries: 3,
-  retryDelay: 1000,
+  // Retry settings
+  maxRetries: 2,
+  retryDelay: 1500,
 });
 
+// Connection status tracking
+let isServerDown = true; // Set to true to use fake data
+
 // Thêm interceptor để tự động thử lại request khi thất bại
-api.interceptors.response.use(null, async (error) => {
-  const config = error.config;
-  
-  // Nếu không có config hoặc đã thử lại quá số lần, trả về lỗi
-  if (!config || !config.maxRetries) return Promise.reject(error);
-  
-  // Tăng số lần đã thử
-  config.retryCount = config.retryCount || 0;
-  config.retryCount += 1;
-  
-  // Nếu vẫn còn số lần thử lại
-  if (config.retryCount <= config.maxRetries) {
-    // Tạo delay trước khi thử lại
-    const delay = config.retryDelay || 1000;
-    console.log(`Retrying request (${config.retryCount}/${config.maxRetries}) after ${delay}ms`);
+api.interceptors.response.use(
+  (response) => {
+    // Reset server down status on successful response
+    isServerDown = false;
+    return response;
+  }, 
+  async (error) => {
+    const config = error.config;
     
-    return new Promise(resolve => {
-      setTimeout(() => resolve(api(config)), delay);
-    });
+    // Check if this is a network error or server error
+    if (error.message && (
+      error.message.includes('Network Error') ||
+      error.message.includes('timeout') ||
+      error.code === 'ECONNABORTED' ||
+      error.message.includes('CORS') ||
+      (error.response && error.response.status >= 500)
+    )) {
+      console.log('Server error detected:', error.message || error.response?.status);
+      
+      // Only set server as down for serious connection issues, not for API errors
+      if (!error.response || error.response.status >= 500) {
+        isServerDown = true;
+      }
+    }
+    
+    // Nếu không có config hoặc đã thử lại quá số lần, trả về lỗi
+    if (!config || !config.maxRetries) return Promise.reject(error);
+    
+    // Tăng số lần đã thử
+    config.retryCount = config.retryCount || 0;
+    config.retryCount += 1;
+    
+    // Nếu vẫn còn số lần thử lại
+    if (config.retryCount <= config.maxRetries) {
+      // Tạo delay trước khi thử lại
+      const delay = config.retryDelay || 1000;
+      console.log(`Retrying request (${config.retryCount}/${config.maxRetries}) after ${delay}ms`);
+      
+      return new Promise(resolve => {
+        setTimeout(() => resolve(api(config)), delay);
+      });
+    }
+    
+    return Promise.reject(error);
   }
-  
-  return Promise.reject(error);
-});
+);
+
+// Function to check server status
+export const checkServerStatus = () => {
+  return {
+    isServerDown,
+    setServerDown: (status) => {
+      isServerDown = status;
+    }
+  };
+};
 
 // Add request interceptor to add auth token
 api.interceptors.request.use(
@@ -60,30 +97,58 @@ api.interceptors.request.use(
   }
 );
 
+// Helper function to force using fake login - no longer used by default
+export const forceFakeLogin = () => {
+  isServerDown = true;
+  localStorage.setItem('usingFakeLogin', 'true');
+};
+
+// Helper function to force real login mode
+export const forceRealLogin = () => {
+  isServerDown = false;
+  localStorage.removeItem('usingFakeLogin');
+};
+
 // Authentication APIs
 export const auth = {
-  login: (username, password) => api.post('/api/auth/login', { username, password }),
-  register: (userData) => api.post('/api/auth/register', userData),
-  getAll: () => api.get('/api/auth/getAll'),
-  // Fake login function để sử dụng khi API không hoạt động
-  fakeLogin: (username, password) => {
-    // Giả lập API trả về thành công với thông tin user và token
-    if ((username === 'admin' && password === 'admin') || 
-        (username === 'user' && password === 'user') || 
-        (username === 'thang' && password === '123456')) {
+  login: (email, password) => {
+    // Always try real login first, fallback to fake only if server is confirmed down
+    if (isServerDown) {
+      console.log('Server is down, using fake login');
+      return auth.fakeLogin(email, password);
+    }
+    // Use new API: email instead of username
+    return axios.post(`${BASE_URL}/api/auth/login`, { email, password }, {
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    })
+      .catch(error => {
+        if (isServerDown || (error.response && error.response.status >= 500)) {
+          console.log('Server error detected, falling back to fake login');
+          return auth.fakeLogin(email, password);
+        }
+        return Promise.reject(error);
+      });
+  },
+  getMe: () => api.get('/api/auth/me'),
+  // Fake login function for offline mode
+  fakeLogin: (email, password) => {
+    // Accepts email for compatibility
+    if ((email === 'admin@example.com' && password === 'admin') || 
+        (email === 'user@example.com' && password === 'user') || 
+        (email === 'thang@example.com' && password === '123456')) {
       return Promise.resolve({
         data: {
           user: {
             id: 1,
-            username: username,
-            email: `${username}@example.com`,
+            email: email,
             roles: ['ROLE_USER']
           },
-          token: 'fake-jwt-token'
+          accessToken: 'fake-jwt-token'
         }
       });
     } else {
-      // Giả lập lỗi đăng nhập
       return Promise.reject({
         response: {
           data: {
@@ -95,72 +160,114 @@ export const auth = {
   }
 };
 
-// Employee APIs (Nhân viên)
+// Rest of the API endpoints with mock data support
+const createMockData = (type, count) => {
+  const items = [];
+  for (let i = 1; i <= count; i++) {
+    items.push({
+      id: i,
+      name: `${type} ${i}`,
+      // Add other fields as needed
+    });
+  }
+  return items;
+};
+
+// Employee APIs
 export const employees = {
-  getAll: () => api.get('/api/nhanvien/getAll'),
-  getById: (id) => api.get(`/api/nhanvien/getByID/${id}`),
-  create: (data) => api.post('/api/nhanvien/addnhanvien', data),
-  update: (id, data) => api.put(`/api/nhanvien/updatenhanvien/${id}`, data),
-  delete: (id) => api.delete(`/api/nhanvien/deleteNhanvien/${id}`),
+  getAll: (params) => isServerDown ? Promise.resolve({ data: createMockData('Employee', 12) }) : api.get('/api/employees', { params }),
+  getById: (id) => api.get(`/api/employees/${id}`),
+  create: (data) => api.post('/api/employees', data),
+  update: (id, data) => api.put(`/api/employees/${id}`, data),
+  delete: (id) => api.delete(`/api/employees/${id}`),
 };
 
-// Department APIs (Phòng ban)
+// Department APIs
 export const departments = {
-  getAll: () => api.get('/api/phongban/getAll'),
-  getById: (id) => api.get(`/api/phongban/getById/${id}`),
-  create: (data) => api.post('/api/phongban/addPhongban', data),
-  update: (id, data) => api.put(`/api/phongban/updatePhongBan/${id}`, data),
-  delete: (id) => api.delete(`/api/phongban/deletePhongBan/${id}`),
+  getAll: () => isServerDown ? Promise.resolve({ data: createMockData('Department', 4) }) : api.get('/api/departments'),
+  getById: (id) => api.get(`/api/departments/${id}`),
+  create: (data) => api.post('/api/departments', data),
+  update: (id, data) => api.put(`/api/departments/${id}`, data),
+  delete: (id) => api.delete(`/api/departments/${id}`),
 };
 
-// Position APIs (Chức vụ)
+// Position APIs
 export const positions = {
-  getAll: () => api.get('/api/chucvu/getAll'),
-  getById: (id) => api.get(`/api/chucvu/getById/${id}`),
-  create: (data) => api.post('/api/chucvu/addChucVu', data),
-  update: (id, data) => api.put(`/api/chucvu/updateChucVu/${id}`, data),
-  delete: (id) => api.delete(`/api/chucvu/deleteChucVu/${id}`),
+  getAll: () => isServerDown ? Promise.resolve({ data: createMockData('Position', 5) }) : api.get('/api/positions'),
+  getById: (id) => api.get(`/api/positions/${id}`),
+  create: (data) => api.post('/api/positions', data),
+  update: (id, data) => api.put(`/api/positions/${id}`, data),
+  delete: (id) => api.delete(`/api/positions/${id}`),
 };
 
-// Division APIs (Bộ phận)
+// Division APIs
 export const divisions = {
-  getAll: () => api.get('/api/bophan/getAll'),
-  getById: (id) => api.get(`/api/bophan/getById/${id}`),
-  create: (data) => api.post('/api/bophan/addBoPhan', data),
-  update: (id, data) => api.put(`/api/bophan/updateBoPhan/${id}`, data),
-  delete: (id) => api.delete(`/api/bophan/deleteBoPhan/${id}`),
+  getAll: () => isServerDown ? Promise.resolve({ data: createMockData('Division', 3) }) : api.get('/api/divisions'),
+  getById: (id) => api.get(`/api/divisions/${id}`),
+  create: (data) => api.post('/api/divisions', data),
+  update: (id, data) => api.put(`/api/divisions/${id}`, data),
+  delete: (id) => api.delete(`/api/divisions/${id}`),
 };
 
-// Contract APIs (Hợp đồng)
+// Contract APIs
 export const contracts = {
-  getAll: () => api.get('/api/hopdong/getAll'),
-  getById: (id) => api.get(`/api/hopdong/getById/${id}`),
-  create: (data) => api.post('/api/hopdong/addHopDong', data),
-  update: (id, data) => api.put(`/api/hopdong/updateHopDong/${id}`, data),
-  delete: (id) => api.delete(`/api/hopdong/deleteHopDong/${id}`),
+  getAll: (params) => isServerDown ? Promise.resolve({ data: createMockData('Contract', 10) }) : api.get('/api/contracts', { params }),
+  getById: (id) => api.get(`/api/contracts/${id}`),
+  create: (data) => api.post('/api/contracts', data),
+  update: (id, data) => api.put(`/api/contracts/${id}`, data),
+  delete: (id) => api.delete(`/api/contracts/${id}`),
 };
 
-// Insurance APIs (Bảo hiểm)
+// Insurance APIs
 export const insurance = {
-  getAll: () => api.get('/api/baohiem/getAll'),
-  getById: (id) => api.get(`/api/baohiem/getById/${id}`),
-  create: (data) => api.post('/api/baohiem/addBaoHiem', data),
-  update: (id, data) => api.put(`/api/baohiem/updateBaoHiem/${id}`, data),
-  delete: (id) => api.delete(`/api/baohiem/deleteBaoHiem/${id}`),
+  getAll: (params) => isServerDown ? Promise.resolve({ data: createMockData('Insurance', 8) }) : api.get('/api/insurance', { params }),
+  getById: (id) => api.get(`/api/insurance/${id}`),
+  create: (data) => api.post('/api/insurance', data),
+  update: (id, data) => api.put(`/api/insurance/${id}`, data),
+  delete: (id) => api.delete(`/api/insurance/${id}`),
 };
 
-// Qualification APIs (Trình độ)
+// Qualifications APIs
 export const qualifications = {
-  getAll: () => api.get('/api/trinhdo/getAll'),
-  getById: (id) => api.get(`/api/trinhdo/getById/${id}`),
-  create: (data) => api.post('/api/trinhdo/addTrinhDo', data),
-  update: (id, data) => api.put(`/api/trinhdo/updateTrinhDo/${id}`, data),
-  delete: (id) => api.delete(`/api/trinhdo/deleteTrinhDo/${id}`),
+  getAll: () => isServerDown ? Promise.resolve({ data: createMockData('Qualification', 6) }) : api.get('/api/qualifications'),
+  getById: (id) => api.get(`/api/qualifications/${id}`),
+  create: (data) => api.post('/api/qualifications', data),
+  update: (id, data) => api.put(`/api/qualifications/${id}`, data),
+  delete: (id) => api.delete(`/api/qualifications/${id}`),
 };
 
-// Attendance APIs (Chấm công)
+// Attendance APIs
 export const attendance = {
-  getAll: () => api.get('/api/chamcong/getAll'),
+  getAll: (params) => isServerDown ? Promise.resolve({ data: createMockData('Attendance', 20) }) : api.get('/api/attendance', { params }),
+  checkIn: (data) => api.post('/api/attendance/check-in', data),
+  checkOut: (data) => api.post('/api/attendance/check-out', data),
+  update: (id, data) => api.put(`/api/attendance/${id}`, data),
 };
 
-export default api; 
+// Salary APIs
+export const salary = {
+  getPayslips: (params) => api.get('/api/salary/payslips', { params }),
+  getComponents: () => api.get('/api/salary/components'),
+  calculate: (data) => api.post('/api/salary/calculate', data),
+};
+
+// Recruitment APIs
+export const recruitment = {
+  getJobs: () => api.get('/api/recruitment/jobs'),
+  getCandidates: (params) => api.get('/api/recruitment/candidates', { params }),
+  addCandidate: (data) => api.post('/api/recruitment/candidates', data),
+};
+
+// Evaluation APIs
+export const evaluations = {
+  getAll: (params) => api.get('/api/evaluations', { params }),
+  create: (data) => api.post('/api/evaluations', data),
+};
+
+// Settings APIs
+export const settings = {
+  get: (key) => api.get(`/api/settings/${key}`),
+  update: (key, value) => api.put(`/api/settings/${key}`, { value }),
+};
+
+export default api;

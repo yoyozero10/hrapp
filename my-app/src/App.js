@@ -14,23 +14,23 @@ import Login from './components/Login';
 // Styles
 import './App.css';
 
-// Create a custom dark theme
+// Create a custom light theme
 const theme = createTheme({
   palette: {
-    mode: 'dark',
+    mode: 'light',
     primary: {
-      main: '#ffffff',
+      main: '#1976d2',
     },
     secondary: {
-      main: '#555555',
+      main: '#f50057',
     },
     background: {
-      default: '#13151a',
-      paper: '#1a1d24',
+      default: '#f5f5f5',
+      paper: '#ffffff',
     },
     text: {
-      primary: '#ffffff',
-      secondary: '#b0b0b0',
+      primary: '#333333',
+      secondary: '#666666',
     },
   },
   typography: {

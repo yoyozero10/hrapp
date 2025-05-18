@@ -1,7 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { salary } from '../services/api';
 
 function Salary() {
-  const [payslips, setPayslips] = useState([
+  const [payslips, setPayslips] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showCalculateModal, setShowCalculateModal] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(7);
+  const [selectedYear, setSelectedYear] = useState(2023);
+
+  // Dữ liệu mẫu fallback
+  const mockPayslips = [
     {
       id: 1,
       employeeName: 'Nguyễn Văn A',
@@ -41,11 +50,31 @@ function Salary() {
       netSalary: 19800000,
       status: 'Đã thanh toán'
     }
-  ]);
+  ];
 
-  const [showCalculateModal, setShowCalculateModal] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(7);
-  const [selectedYear, setSelectedYear] = useState(2023);
+  useEffect(() => {
+    fetchPayslips();
+    // eslint-disable-next-line
+  }, [selectedMonth, selectedYear]);
+
+  const fetchPayslips = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await salary.getPayslips({ month: selectedMonth, year: selectedYear });
+      if (response && response.data) {
+        setPayslips(response.data);
+      } else {
+        setPayslips(mockPayslips);
+        setError('Không có dữ liệu từ máy chủ, hiển thị dữ liệu mẫu.');
+      }
+    } catch (err) {
+      setPayslips(mockPayslips);
+      setError('Không thể kết nối đến máy chủ. Hiển thị dữ liệu mẫu.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="main-content">
@@ -125,24 +154,30 @@ function Salary() {
               </tr>
             </thead>
             <tbody>
-              {payslips.map(payslip => (
-                <tr key={payslip.id}>
-                  <td>{payslip.employeeName}</td>
-                  <td>{payslip.department}</td>
-                  <td>{payslip.position}</td>
-                  <td>{payslip.baseSalary.toLocaleString('vi-VN')} VNĐ</td>
-                  <td>{payslip.allowance.toLocaleString('vi-VN')} VNĐ</td>
-                  <td>{payslip.insurance.toLocaleString('vi-VN')} VNĐ</td>
-                  <td className="salary-amount">{payslip.netSalary.toLocaleString('vi-VN')} VNĐ</td>
-                  <td>
-                    <span className="status active">{payslip.status}</span>
-                  </td>
-                  <td>
-                    <button className="btn-icon"><i className="fas fa-file-pdf"></i></button>
-                    <button className="btn-icon"><i className="fas fa-edit"></i></button>
-                  </td>
-                </tr>
-              ))}
+              {loading ? (
+                <tr><td colSpan="9" style={{ textAlign: 'center' }}>Đang tải dữ liệu...</td></tr>
+              ) : payslips.length === 0 ? (
+                <tr><td colSpan="9" style={{ textAlign: 'center' }}>Không có dữ liệu lương</td></tr>
+              ) : (
+                payslips.map(payslip => (
+                  <tr key={payslip.id}>
+                    <td>{payslip.employeeName || payslip.employee?.name}</td>
+                    <td>{payslip.department || payslip.employee?.department?.name}</td>
+                    <td>{payslip.position || payslip.employee?.position?.name}</td>
+                    <td>{(payslip.baseSalary || payslip.base_salary || 0).toLocaleString('vi-VN')} VNĐ</td>
+                    <td>{(payslip.allowance || payslip.allowance_amount || 0).toLocaleString('vi-VN')} VNĐ</td>
+                    <td>{(payslip.insurance || payslip.insurance_amount || 0).toLocaleString('vi-VN')} VNĐ</td>
+                    <td className="salary-amount">{(payslip.netSalary || payslip.net_salary || 0).toLocaleString('vi-VN')} VNĐ</td>
+                    <td>
+                      <span className="status active">{payslip.status || payslip.status_text}</span>
+                    </td>
+                    <td>
+                      <button className="btn-icon"><i className="fas fa-file-pdf"></i></button>
+                      <button className="btn-icon"><i className="fas fa-edit"></i></button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

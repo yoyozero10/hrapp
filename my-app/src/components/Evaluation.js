@@ -1,33 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { evaluations } from '../services/api';
 
 function Evaluation() {
-  const [evaluations, setEvaluations] = useState([
-    { 
-      id: 1, 
-      employeeName: 'Nguyễn Văn A', 
-      year: 2023, 
-      quarter: 2, 
-      score: 8.5, 
-      note: 'Hoàn thành xuất sắc nhiệm vụ được giao' 
-    },
-    { 
-      id: 2, 
-      employeeName: 'Trần Thị B', 
-      year: 2023, 
-      quarter: 2, 
-      score: 7.5, 
-      note: 'Hoàn thành tốt nhiệm vụ, cần cải thiện kỹ năng giao tiếp' 
-    },
-    { 
-      id: 3, 
-      employeeName: 'Lê Văn C', 
-      year: 2023, 
-      quarter: 2, 
-      score: 9.0, 
-      note: 'Xuất sắc, có sáng kiến cải tiến quy trình làm việc' 
-    }
-  ]);
-
+  const [evaluationsList, setEvaluationsList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     employeeName: '',
@@ -37,21 +14,51 @@ function Evaluation() {
     note: ''
   });
 
-  const handleSubmit = (e) => {
+  // Dữ liệu mẫu fallback
+  const mockEvaluations = [
+    { id: 1, employeeName: 'Nguyễn Văn A', year: 2023, quarter: 2, score: 8.5, note: 'Hoàn thành xuất sắc nhiệm vụ được giao' },
+    { id: 2, employeeName: 'Trần Thị B', year: 2023, quarter: 2, score: 7.5, note: 'Hoàn thành tốt nhiệm vụ, cần cải thiện kỹ năng giao tiếp' },
+    { id: 3, employeeName: 'Lê Văn C', year: 2023, quarter: 2, score: 9.0, note: 'Xuất sắc, có sáng kiến cải tiến quy trình làm việc' }
+  ];
+
+  useEffect(() => {
+    fetchEvaluations();
+  }, []);
+
+  const fetchEvaluations = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await evaluations.getAll();
+      if (response && response.data) {
+        setEvaluationsList(response.data);
+      } else {
+        setEvaluationsList(mockEvaluations);
+        setError('Không có dữ liệu từ máy chủ, hiển thị dữ liệu mẫu.');
+      }
+    } catch (err) {
+      setEvaluationsList(mockEvaluations);
+      setError('Không thể kết nối đến máy chủ. Hiển thị dữ liệu mẫu.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const newEvaluation = {
-      id: evaluations.length + 1,
-      ...formData
-    };
-    setEvaluations([...evaluations, newEvaluation]);
-    setShowForm(false);
-    setFormData({
-      employeeName: '',
-      year: 2023,
-      quarter: 2,
-      score: 7.0,
-      note: ''
-    });
+    setLoading(true);
+    setError(null);
+    try {
+      // Gửi đánh giá mới lên server
+      await evaluations.create(formData);
+      setShowForm(false);
+      setFormData({ employeeName: '', year: 2023, quarter: 2, score: 7.0, note: '' });
+      fetchEvaluations();
+    } catch (err) {
+      setError('Không thể tạo đánh giá mới.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getScoreColor = (score) => {
@@ -131,22 +138,26 @@ function Evaluation() {
               </tr>
             </thead>
             <tbody>
-              {evaluations.map(evaluation => (
-                <tr key={evaluation.id}>
-                  <td>{evaluation.employeeName}</td>
-                  <td>Q{evaluation.quarter}/{evaluation.year}</td>
-                  <td>
-                    <span className={`score ${getScoreColor(evaluation.score)}`}>
-                      {evaluation.score}
-                    </span>
-                  </td>
-                  <td>{evaluation.note}</td>
-                  <td>
-                    <button className="btn-icon"><i className="fas fa-edit"></i></button>
-                    <button className="btn-icon"><i className="fas fa-trash"></i></button>
-                  </td>
-                </tr>
-              ))}
+              {loading ? (
+                <tr><td colSpan="5" style={{ textAlign: 'center' }}>Đang tải dữ liệu...</td></tr>
+              ) : evaluationsList.length === 0 ? (
+                <tr><td colSpan="5" style={{ textAlign: 'center' }}>Không có dữ liệu đánh giá</td></tr>
+              ) : (
+                evaluationsList.map(evaluation => (
+                  <tr key={evaluation.id}>
+                    <td>{evaluation.employeeName || evaluation.employee?.name}</td>
+                    <td>Q{evaluation.quarter}/{evaluation.year}</td>
+                    <td>
+                      <span className={`score ${getScoreColor(evaluation.score)}`}>{evaluation.score}</span>
+                    </td>
+                    <td>{evaluation.note}</td>
+                    <td>
+                      <button className="btn-icon"><i className="fas fa-edit"></i></button>
+                      <button className="btn-icon"><i className="fas fa-trash"></i></button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -121,7 +121,7 @@ const MainLayout = ({ children }) => {
           </Typography>
 
           <IconButton onClick={handleProfileMenuOpen} sx={{ ml: 2 }}>
-            <Avatar sx={{ bgcolor: '#1a1a1a', width: 36, height: 36 }}>
+            <Avatar sx={{ bgcolor: theme.palette.primary.main, width: 36, height: 36 }}>
               {user?.username?.charAt(0).toUpperCase() || 'U'}
             </Avatar>
           </IconButton>
